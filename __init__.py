@@ -1,2 +1,1 @@
-"""AstrBot AICat image plugin."""
-
+"""AstrBot Selfie Image plugin."""

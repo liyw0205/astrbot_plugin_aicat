@@ -2,7 +2,7 @@
   "web": {
     "description": "关键启动配置",
     "type": "object",
-    "hint": "这里只保留插件启动 Web 面板所需的关键配置。生图渠道、模型、自拍、权限等完整配置请在 Flask Web 面板里保存，单独存到插件数据目录 aicat_config.json。",
+    "hint": "这里只保留插件启动 Web 面板所需的关键配置。生图渠道、模型、自拍、权限等完整配置请在 Flask Web 面板里保存，单独存到插件数据目录 selfie_image_config.json。",
     "items": {
       "enable": {
         "description": "启用 Flask Web",
@@ -28,4 +28,3 @@
     }
   }
 }
-

@@ -1,4 +1,4 @@
-"""AstrBot port of Napcat AICat image and selfie features."""
+"""AstrBot image and selfie generation plugin."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import json
 import os
 import random
 import re
+import shutil
 import threading
 import time
 from collections.abc import Mapping
@@ -34,7 +35,15 @@ except Exception:
     def get_astrbot_data_path() -> str:
         return os.path.join(os.getcwd(), "data")
 
-from .constants import PLUGIN_AUTHOR, PLUGIN_NAME, PLUGIN_VERSION
+from .constants import (
+    LEGACY_CONFIG_FILENAME,
+    LEGACY_PLUGIN_NAME,
+    PLUGIN_AUTHOR,
+    PLUGIN_CONFIG_FILENAME,
+    PLUGIN_DISPLAY_NAME,
+    PLUGIN_NAME,
+    PLUGIN_VERSION,
+)
 from .generator import generate_image_with_fallback
 from .preset import ImagePresetManager
 from .models import (
@@ -81,6 +90,7 @@ def append_anatomy_constraints(prompt: str) -> str:
             "2. Keep the correct number of heads, arms, hands, fingers, legs and feet for each person.",
             "3. No missing limbs, no extra limbs, no malformed limbs, no fused limbs, no detached body parts.",
             "4. No extra fingers, no missing fingers, no twisted hands, no broken wrists, no duplicated hands or feet.",
+            "5. Do not crop off limbs awkwardly at the image edge; keep visible bodies coherent and complete.",
         ]
     )
 
@@ -106,7 +116,7 @@ def build_prompt_with_reference_instruction(prompt: str, images: List[ImageRefer
             "4. If there are multiple reference images, use them according to the user request.",
             "5. Keep the final image as a single complete coherent image, not a collage, not split screen, not multiple panels.",
             "6. Do not add text, watermark, UI, borders, or captions.",
-            "7. Keep human anatomy complete and natural: correct arms, hands, fingers, legs and feet; no missing limbs, extra limbs, fused limbs, malformed limbs, detached body parts, extra fingers or broken hands.",
+            "7. Keep human anatomy complete and natural: correct arms, hands, fingers, legs and feet; no missing limbs, extra limbs, fused limbs, malformed limbs, detached body parts, extra fingers, broken hands, or awkwardly cropped-off limbs.",
             *multi_person_rules,
             "",
             "User request:",
@@ -115,13 +125,16 @@ def build_prompt_with_reference_instruction(prompt: str, images: List[ImageRefer
     )
 
 
-@register(PLUGIN_NAME, PLUGIN_AUTHOR, f"AICat 生图自拍 v{PLUGIN_VERSION}", PLUGIN_VERSION)
-class AICatPlugin(Star):
+@register(PLUGIN_NAME, PLUGIN_AUTHOR, f"{PLUGIN_DISPLAY_NAME} v{PLUGIN_VERSION}", PLUGIN_VERSION)
+class SelfieImagePlugin(Star):
     def __init__(self, context: Context, config: Optional[dict] = None):
         super().__init__(context)
-        self.data_dir = os.path.join(str(get_astrbot_data_path()), "plugin_data", PLUGIN_NAME)
+        plugin_data_dir = os.path.join(str(get_astrbot_data_path()), "plugin_data")
+        self.data_dir = os.path.join(plugin_data_dir, PLUGIN_NAME)
+        self._migrate_legacy_data_dir(plugin_data_dir)
         os.makedirs(self.data_dir, exist_ok=True)
-        self.config_path = os.path.join(self.data_dir, "aicat_config.json")
+        self.config_path = os.path.join(self.data_dir, PLUGIN_CONFIG_FILENAME)
+        self._migrate_legacy_config_file()
         self.usage_path = os.path.join(self.data_dir, "usage_stats.json")
         self.records_path = os.path.join(self.data_dir, "generation_records.json")
         self.generated_dir = os.path.join(self.data_dir, "image_cache")
@@ -161,6 +174,28 @@ class AICatPlugin(Star):
 
     async def terminate(self) -> None:
         self.web_server.stop()
+
+    def _migrate_legacy_data_dir(self, plugin_data_dir: str) -> None:
+        if os.path.exists(self.data_dir):
+            return
+        legacy_dir = os.path.join(plugin_data_dir, LEGACY_PLUGIN_NAME)
+        if not os.path.isdir(legacy_dir):
+            return
+        try:
+            shutil.copytree(legacy_dir, self.data_dir)
+            logger.info(f"[SelfieImage] 已迁移旧数据目录: {legacy_dir} -> {self.data_dir}")
+        except Exception as exc:
+            logger.warning(f"[SelfieImage] 迁移旧数据目录失败: {exc}", exc_info=True)
+
+    def _migrate_legacy_config_file(self) -> None:
+        legacy_path = os.path.join(self.data_dir, LEGACY_CONFIG_FILENAME)
+        if os.path.exists(self.config_path) or not os.path.exists(legacy_path):
+            return
+        try:
+            shutil.copy2(legacy_path, self.config_path)
+            logger.info(f"[SelfieImage] 已迁移旧配置文件: {legacy_path} -> {self.config_path}")
+        except Exception as exc:
+            logger.warning(f"[SelfieImage] 迁移旧配置文件失败: {exc}", exc_info=True)
 
     def _config_object_to_dict(self, value: Any) -> Dict[str, Any]:
         if value is None:
@@ -234,9 +269,9 @@ class AICatPlugin(Star):
             return
         try:
             self.web_server.start(self.config.web_host, self.config.web_port)
-            logger.info(f"[AICat] Flask Web 已启动: http://{self.config.web_host}:{self.config.web_port}")
+            logger.info(f"[SelfieImage] Flask Web 已启动: http://{self.config.web_host}:{self.config.web_port}")
         except Exception as exc:
-            logger.error(f"[AICat] Flask Web 启动失败: {exc}", exc_info=True)
+            logger.error(f"[SelfieImage] Flask Web 启动失败: {exc}", exc_info=True)
 
     def get_config_for_web(self) -> Dict[str, Any]:
         web_config = copy.deepcopy(self.raw_config)
@@ -327,8 +362,8 @@ class AICatPlugin(Star):
         if status.get("allowed"):
             return ""
         if status.get("reason") == "可使用人员白名单":
-            return "当前仅允许可使用人员白名单内用户使用 AICat 生图。"
-        return "你已被加入用户黑名单，无法使用 AICat 生图。"
+            return "当前仅允许可使用人员白名单内用户使用生图功能。"
+        return "你已被加入用户黑名单，无法使用生图功能。"
 
     def _quota_error_message(self, event: AstrMessageEvent, requested_count: int = 1) -> str:
         permission_error = self._permission_denied_message(event)
@@ -450,22 +485,60 @@ class AICatPlugin(Star):
         multi = count > 1
         if kind == "selfie":
             options = [
-                f"{name}去整理一下镜头，很快回来。",
-                "我去找个自然点的角度，等我一下。",
-                "这张我想拍得松弛一点，马上给你看。",
-                "我先收拾一下表情和光线。",
+                f"{name}去找一下角度。",
+                "等我一下，我对下光线。",
+                "我换个顺眼点的构图。",
+                "我先把画面收一下。",
+                "稍等，我抓个自然点的瞬间。",
+                "我试个更日常的角度。",
+                "等我，我把镜头感压轻一点。",
+                "我先看一下怎么拍更舒服。",
             ]
             if multi:
-                options.extend(["我多试几个角度，挑顺眼的给你看。", f"{name}多拍几张，别急。"])
+                options.extend(["我多试几个角度。", f"{name}多拍几张看看。", "我换几版构图。"])
             return random.choice(options)
         options = [
-            f"{name}先把画面理顺，很快给你看。",
-            "我先想一下构图和光线。",
-            "这个我有画面了，等我一下。",
-            "我去把画面搭起来。",
+            f"{name}先把画面理一下。",
+            "我先想一下构图。",
+            "等我一下，我搭个画面。",
+            "我试着把这个感觉做出来。",
+            "稍等，我换个画面方向。",
+            "我先对一下主体和光线。",
         ]
         if multi:
-            options.extend(["我多试几版构图，等我一下。", f"{name}多跑几张看看效果。"])
+            options.extend(["我多试几版构图。", f"{name}多跑几张看看。"])
+        return random.choice(options)
+
+    def _natural_fail_fallback(self, kind: str = "") -> str:
+        options_by_kind = {
+            "legs": [
+                "刚刚那版腿部比例不太顺。",
+                "这次腿部构图没出来。",
+                "刚才那张下半身有点乱。",
+                "这版角度不太对。",
+                "刚刚那张效果不行。",
+            ],
+            "selfie": [
+                "刚刚那版不太像我。",
+                "这次镜头感有点跑偏。",
+                "刚才那张效果不太对。",
+                "这版没出来想要的感觉。",
+                "刚刚那张不太行。",
+            ],
+            "group": [
+                "刚刚那版同框效果不太对。",
+                "这次合影站位有点乱。",
+                "刚才那张人物关系没处理好。",
+                "这版合照没出来想要的感觉。",
+            ],
+            "image": [
+                "刚刚那版画面不太对。",
+                "这次效果没出来。",
+                "刚才那张没成。",
+                "这版构图有点跑偏。",
+            ],
+        }
+        options = options_by_kind.get(kind) or options_by_kind["image"]
         return random.choice(options)
 
     def _selfie_ack_text(self, action: str, count: int, ack_message: str = "") -> str:
@@ -973,7 +1046,7 @@ class AICatPlugin(Star):
         try:
             await event.send(event.plain_result(text))
         except Exception as exc:
-            logger.warning(f"[AICat] 发送进度消息失败: {exc}")
+            logger.warning(f"[SelfieImage] 发送进度消息失败: {exc}")
 
     def _build_progress_text(self, kind: str, user_request: str, count: int, ack_message: str = "") -> str:
         if kind == "selfie":
@@ -1064,10 +1137,10 @@ class AICatPlugin(Star):
         if "提示词审核未通过" in text or "图片内容审核未通过" in text or "提示词包含禁用词" in text:
             return "这次这个方向我不太方便照着来，换个说法或者换个感觉试试。"
         if "当前没有可用的生图模型" in text or "未配置可用出图审核模型" in text or "未启用" in text:
-            return "我这会儿还没法把这张整理出来，晚点再来找我。"
+            return random.choice(["这会儿接口没接上，晚点再试。", "现在暂时出不了图，等配置恢复再来。"])
         if "缺少生图提示词" in text or "请输入提示词" in text:
             return "你想让我往什么感觉走？也可以直接丢张参考图给我。"
-        return fallback or "我刚刚这张没拍稳，换个角度再试一次好不好。"
+        return fallback or self._natural_fail_fallback("image")
 
     def _tool_soft_fail(self, error: str, fallback: str = "") -> str:
         message = self._friendly_user_error_message(error, fallback)
@@ -1082,8 +1155,8 @@ class AICatPlugin(Star):
             "像低头看向自己腿部的自然随手拍；也可以使用自然低角度坐姿自拍，但不要拍成正面露脸自拍或对镜站姿时漏脸。"
             "坐在椅子、床沿、沙发或地毯边，双腿自然向前或斜侧摆放，轻微交叠或并拢放松，膝盖与脚尖方向协调，"
             "脚踝线条清晰，避免广角畸变。构图重点：裙摆/裤脚、膝盖、小腿、脚踝完整美观。"
-            "如果用户明确要求丝袜，允许穿丝袜（连裤袜、过膝袜、透肤丝袜等），丝袜贴合腿部曲线，可以有轻微勒肉或自然贴合痕迹，"
-            "丝袜贴合腿部曲线，允许有自然的肌肤起伏或袜口轻微陷入感，不刻意追求完美紧绷。"
+            "默认穿黑色透肤丝袜 / 黑丝，不要让今日穿搭覆盖这个默认袜装；如果额外要求明确指定白丝、肉丝、光腿、短袜或其他袜装，则以额外要求为准。"
+            "黑丝贴合腿部曲线，可以有轻微勒肉或自然贴合痕迹，允许有自然的肌肤起伏或袜口轻微陷入感，不刻意追求完美紧绷。"
             "脚踝处可有轻微堆积褶皱或自然松弛感，鞋面干净。可有自然手部互动：轻拉袜头、抚平丝袜边缘、整理裙摆或扶膝盖，"
             "不做固定拉扯姿势。整体放松慵懒居家，结合时段光线（晨光/午后漫反射/傍晚暖灯/床边小灯），"
             "环境浅色系、毛绒地毯、木地板、柔和低饱和清透色调。不露完整人脸，膝盖、脚踝边缘可不完全卡紧，允许轻微裁切但不要突兀。"
@@ -1094,6 +1167,37 @@ class AICatPlugin(Star):
         extra = re.sub(r"\s+", " ", str(extra_request or "")).strip(" 。")
         if extra:
             base += f" 额外要求：{extra}。"
+        return base
+
+    def _build_third_person_look_action(self, extra_request: str = "", has_refs: bool = False) -> str:
+        base = (
+            "【他拍 / 看看你模式】展示 AI 当前样子的自然日常照片。"
+            "必须像第二个人在画面外用相机或手机帮 AI 拍照，有朋友随手拍、生活抓拍的感觉。"
+            "这不是 AI 自己拿手机自拍：不要手持手机、不要自拍杆、不要镜子自拍、不要对镜拍、不要手机遮脸、不要伸手自拍。"
+            "主角可以自然看向镜头，也可以像被人叫住时轻松回头；构图应像旁边的人真实拍下的一张照片。"
+            "保持 AI 当前形象、今日穿搭和生活状态一致，画面自然清晰。"
+        )
+        if has_refs:
+            base = "参考用户提供的图片氛围、场景或构图，" + base
+        extra = re.sub(r"\s+", " ", str(extra_request or "")).strip(" 。")
+        if extra:
+            base += f" 额外要求：{extra}。"
+        return base
+
+    def _build_group_selfie_action(self, extra_request: str = "", has_refs: bool = False) -> str:
+        base = (
+            "合影 / 合照 / 同框。AI 自己必须作为画面主角之一，与用户指定或提供的对象自然同框合影，保持 AI 当前形象一致。"
+            "这不是普通单人自拍；最终画面必须包含 AI 自己和合影对象。"
+            "如果同一张参考图里有多个可见人物 / 角色，按实际可见人数全部保留为独立同框对象。"
+            "如果参考图是动漫、卡通、表情包或非真人对象，默认拟人化 / 真人化成自然同框的人类角色，并保留主要识别特征。"
+        )
+        if has_refs:
+            base += " 用户提供或艾特对象的头像/图片是合影对象参考，不要只作为风格或构图参考。"
+        else:
+            base += " 没有合影对象参考图时，按文字要求生成自然同框对象。"
+        extra = re.sub(r"\s+", " ", str(extra_request or "")).strip(" 。")
+        if extra:
+            base += f" 用户补充要求：{extra}。"
         return base
 
     def _looks_like_group_selfie_intent(self, text: str) -> bool:
@@ -1229,7 +1333,7 @@ class AICatPlugin(Star):
             prompt, refs = await self._build_selfie_prompt_and_refs(action, extra_refs)
             result = await self._run_image_generation(prompt, aspect, resolution, refs, source="llm-generate-selfie", audit_user_id=event_user_id(event), event=event, original_prompt=action)
             if not result.get("success"):
-                return self._tool_soft_fail(str(result.get("error") or ""), "这张我刚刚没拍稳。")
+                return self._tool_soft_fail(str(result.get("error") or ""), self._natural_fail_fallback("selfie"))
             files.extend(result.get("files", []))
             used_model = str(result.get("used_model") or used_model)
         sent = await self._send_generated_images(event, files)
@@ -1531,8 +1635,21 @@ class AICatPlugin(Star):
         original_prompt = str(payload.get("prompt") or "").strip() or "看着镜头自然自拍"
         aspect = str(payload.get("aspect_ratio") or self.config.image_default_aspect_ratio or "自动")
         resolution = str(payload.get("resolution") or self.config.image_default_resolution or "1K")
+        prompt_enhance_raw = payload.get("prompt_enhance", True)
+        prompt_enhance = not (
+            prompt_enhance_raw is False
+            or str(prompt_enhance_raw).strip().lower() in {"false", "0", "no", "off", "关闭", "否"}
+        )
 
-        if payload.get("use_selfie_reference"):
+        if not prompt_enhance:
+            refs = list(extra_refs)
+            if payload.get("use_selfie_reference"):
+                persona_ref = self.persona.get_reference_image()
+                if not persona_ref:
+                    raise RuntimeError("当前未设置 AI 自拍形象参考图，请先上传形象图，或取消使用自拍形象参考图")
+                refs.insert(0, ImageReference(data=persona_ref["data"], mime_type=persona_ref["mime_type"]))
+            prompt = original_prompt
+        elif payload.get("use_selfie_reference"):
             prompt, refs = await self._build_selfie_prompt_and_refs(original_prompt, extra_refs)
             if not refs:
                 raise RuntimeError("当前未设置 AI 自拍形象参考图，请先上传形象图，或取消使用自拍形象参考图")
@@ -1626,10 +1743,13 @@ class AICatPlugin(Star):
         final_prompt = build_prompt_with_reference_instruction(prompt, refs)
         return await self._run_image_generation(final_prompt, aspect, resolution, refs, source=source, audit_user_id=event_user_id(event), event=event, original_prompt=prompt)
 
+    async def _draw_passthrough_once(self, event: AstrMessageEvent, prompt: str, aspect: str, resolution: str, refs: List[ImageReference], source: str) -> Dict[str, Any]:
+        return await self._run_image_generation(prompt, aspect, resolution, refs, source=source, audit_user_id=event_user_id(event), event=event, original_prompt=prompt)
+
     async def _handle_selfie_command(
         self,
         event: AstrMessageEvent,
-        command_name: str,
+        command_name: Any,
         fallback: str,
         default_action: str,
         default_action_with_refs: str,
@@ -1673,58 +1793,22 @@ class AICatPlugin(Star):
         if info:
             yield event.plain_result(info)
 
-    def _extract_compact_command_message(self, event: AstrMessageEvent, command_name: str, fallback: str = "") -> str:
-        text = extract_event_text(event)
-        if not text:
-            return fallback.strip()
-        match = re.match(rf"^\s*[/!！.]?{re.escape(command_name)}\s*([\s\S]*)$", text)
-        if not match:
-            return fallback.strip()
-        return (match.group(1) or fallback or "").strip()
-
-    def _build_quick_look_action(self, message: str, has_refs: bool) -> Tuple[str, str, str, str]:
-        value = re.sub(r"\s+", " ", str(message or "")).strip()
-        compact = re.sub(r"[\s，。！？、；：,.!?]", "", value.lower())
-        is_group = self._looks_like_group_selfie_intent(value)
-        if is_group:
-            if value:
-                action = f"{value}。AI 自己必须作为画面主角之一，与用户提供的参考图对象自然同框合影；如果同一张参考图里有多个可见人物 / 角色，按实际可见人数全部保留为独立同框对象；如果参考图是动漫、卡通、表情包或非真人对象，默认拟人化 / 真人化成自然同框的人类角色，并保留主要识别特征。"
-            else:
-                action = "自然同框合影，AI 自己必须作为画面主角之一。"
-            if not has_refs:
-                action += " 没有合影对象参考图时，按文字要求生成同框对象。"
-            return action, "合影", "command-look-group-selfie", "这次合影我没拍稳"
-
-        if not value or compact in {"你", "你自己", "你的样子", "现在", "自拍", "看看你", "看你"}:
-            return "看着镜头自然自拍，展示你现在的样子。", "自拍", "command-look-selfie", "这次我没拍稳"
-
-        body_terms = ["腿", "脚", "手", "全身", "半身", "侧身", "站起来", "转身", "姿势", "动作", "表情"]
-        clothes_terms = ["旗袍", "裙", "衣服", "服装", "穿搭", "造型", "礼服", "制服", "女仆", "水手服", "jk", "cos", "cosplay"]
-        has_body_term = any(term in compact for term in body_terms)
-        has_clothes_term = any(term in compact for term in clothes_terms)
-        if has_body_term and has_clothes_term:
-            action = f"按「{value}」这个组合要求自然自拍：优先呈现指定服装/穿搭，同时重点展示相关身体部位，构图得体，保持 AI 当前形象一致。"
-        elif has_clothes_term:
-            action = f"穿着{value}自然自拍，展示{value}造型，保持 AI 当前形象一致。"
-        elif has_body_term:
-            action = f"自然自拍，重点展示{value}，构图得体，保持 AI 当前形象一致。"
-        else:
-            action = f"按「{value}」这个要求自然自拍，保持 AI 当前形象一致。"
-        return action, "自拍", "command-look-selfie", "这次我没拍稳"
-
-    @filter.command("aicat帮助")
+    @filter.command("生图帮助")
     async def cmd_help(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
         yield event.plain_result(
             "\n".join(
                 [
-                    f"AICat 生图自拍 v{PLUGIN_VERSION}",
-                    "/画 <预设名或提示词> [额外提示词] [--ar 1:1] [--resolution 2K]",
+                    f"{PLUGIN_DISPLAY_NAME} v{PLUGIN_VERSION}",
+                    "/画 <预设名或提示词> [额外提示词] [--ar 1:1] [--resolution 2K]（别名 /生图）",
+                    "/文生图 <原始提示词> [--ar 1:1] [--resolution 2K]（提示词直通）",
+                    "/图生图 <原始提示词> [--ar 1:1] [--resolution 2K]（附带/引用图片，提示词直通）",
                     "/预设",
                     "/预设添加 名称:提示词",
                     "/预设删除 名称",
-                    "/自拍 <动作/场景/换装/合照要求> [--ar 3:4]",
-                    "/看看<内容> 例如 /看看腿、/看看旗袍、/看看合影",
-                    "/合影 <动作/场景/合照要求> [--ar 1:1]",
+                    "/自拍 <动作/场景/换装/合照要求> [--ar 3:4]（别名 /看看）",
+                    "/看看腿 [额外要求] [--ar 3:4]",
+                    "/看看你 [动作/场景] [--ar 3:4]（他拍感，不是手持自拍）",
+                    "/合影 <动作/场景/合照要求> [--ar 1:1]（别名 /合照）",
                     "/形象查看",
                     "/形象设置 <发送图片、引用图片或图片链接>",
                     "/形象清除",
@@ -1735,7 +1819,7 @@ class AICatPlugin(Star):
             )
         )
 
-    @filter.command("画")
+    @filter.command("画", alias={"生图"})
     async def cmd_draw(
         self,
         event: AstrMessageEvent,
@@ -1756,7 +1840,7 @@ class AICatPlugin(Star):
             return
 
         fallback = " ".join(item for item in [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10] if item).strip()
-        message = extract_command_message(event, "画", fallback)
+        message = extract_command_message(event, ("画", "生图"), fallback)
         prompt, aspect, resolution, _, _ = self._resolve_image_preset(message)
         refs = await self._event_reference_images(event, include_at_avatar=True)
         if not prompt and refs:
@@ -1768,7 +1852,7 @@ class AICatPlugin(Star):
         yield event.plain_result(self._build_progress_text("image", prompt, 1))
         result = await self._draw_once(event, prompt, aspect, resolution, refs, "command-draw")
         if not result.get("success"):
-            yield event.plain_result(self._friendly_user_error_message(str(result.get("error") or ""), "这张我刚刚没理顺。"))
+            yield event.plain_result(self._friendly_user_error_message(str(result.get("error") or ""), self._natural_fail_fallback("image")))
             return
 
         files = result.get("files", [])
@@ -1778,7 +1862,91 @@ class AICatPlugin(Star):
         if info:
             yield event.plain_result(info)
 
-    @filter.command("自拍")
+    @filter.command("文生图")
+    async def cmd_raw_text_to_image(
+        self,
+        event: AstrMessageEvent,
+        p1: str = "",
+        p2: str = "",
+        p3: str = "",
+        p4: str = "",
+        p5: str = "",
+        p6: str = "",
+        p7: str = "",
+        p8: str = "",
+        p9: str = "",
+        p10: str = "",
+    ) -> AsyncGenerator[Any, None]:
+        error = self._quota_error_message(event, 1) or self._rate_limit_error_message(event)
+        if error:
+            yield event.plain_result(error)
+            return
+
+        fallback = " ".join(item for item in [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10] if item).strip()
+        message = extract_command_message(event, "文生图", fallback)
+        prompt, aspect, resolution = self._parse_prompt_options(message)
+        if not prompt:
+            yield event.plain_result("请输入文生图提示词。")
+            return
+
+        yield event.plain_result(self._build_progress_text("image", prompt, 1))
+        result = await self._draw_passthrough_once(event, prompt, aspect, resolution, [], "command-raw-text-to-image")
+        if not result.get("success"):
+            yield event.plain_result(self._friendly_user_error_message(str(result.get("error") or ""), self._natural_fail_fallback("image")))
+            return
+
+        files = result.get("files", [])
+        self._record_generated_images(event, len(files))
+        yield event.chain_result([self._create_image_component(path) for path in files])
+        info = self._build_success_text(float(result.get("elapsed_seconds") or 0), len(files), str(result.get("used_model") or ""), event)
+        if info:
+            yield event.plain_result(info)
+
+    @filter.command("图生图")
+    async def cmd_raw_image_to_image(
+        self,
+        event: AstrMessageEvent,
+        p1: str = "",
+        p2: str = "",
+        p3: str = "",
+        p4: str = "",
+        p5: str = "",
+        p6: str = "",
+        p7: str = "",
+        p8: str = "",
+        p9: str = "",
+        p10: str = "",
+    ) -> AsyncGenerator[Any, None]:
+        error = self._quota_error_message(event, 1) or self._rate_limit_error_message(event)
+        if error:
+            yield event.plain_result(error)
+            return
+
+        fallback = " ".join(item for item in [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10] if item).strip()
+        message = extract_command_message(event, "图生图", fallback)
+        prompt, aspect, resolution = self._parse_prompt_options(message)
+        refs = await self._event_reference_images(event, include_at_avatar=True)
+        if not refs:
+            yield event.plain_result("请附带、引用图片，或艾特要作为参考的对象。")
+            return
+        if not prompt:
+            yield event.plain_result("请输入图生图提示词。")
+            return
+
+        yield event.plain_result(self._build_progress_text("image", prompt, 1))
+        result = await self._draw_passthrough_once(event, prompt, aspect, resolution, refs, "command-raw-image-to-image")
+        if not result.get("success"):
+            yield event.plain_result(self._friendly_user_error_message(str(result.get("error") or ""), self._natural_fail_fallback("image")))
+            return
+
+        files = result.get("files", [])
+        self._record_generated_images(event, len(files))
+        yield event.chain_result([self._create_image_component(path) for path in files])
+        info = self._build_success_text(float(result.get("elapsed_seconds") or 0), len(files), str(result.get("used_model") or ""), event)
+        if info:
+            yield event.plain_result(info)
+
+    @filter.command("自拍", alias={"看看"})
     async def cmd_selfie(
         self,
         event: AstrMessageEvent,
@@ -1796,13 +1964,13 @@ class AICatPlugin(Star):
         fallback = " ".join(item for item in [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10] if item).strip()
         async for item in self._handle_selfie_command(
             event=event,
-            command_name="自拍",
+            command_name=("自拍", "看看"),
             fallback=fallback,
             default_action="看着镜头自然自拍，展示你现在的样子",
             default_action_with_refs="参考用户提供的图片氛围和构图，看着镜头自然自拍，保持 AI 当前形象一致。",
             progress_label="自拍",
             source="command-selfie",
-            fail_label="这次我没拍稳",
+            fail_label=self._natural_fail_fallback("selfie"),
         ):
             yield item
 
@@ -1831,13 +1999,13 @@ class AICatPlugin(Star):
             default_action_with_refs=self._build_leg_focus_action("", True),
             progress_label="自拍",
             source="command-look-legs",
-            fail_label="这张腿部特写我刚刚没拍稳",
+            fail_label=self._natural_fail_fallback("legs"),
             message_override=fallback,
         ):
             yield item
 
-    @filter.command("看看")
-    async def cmd_quick_look(
+    @filter.command("看看你")
+    async def cmd_look_you(
         self,
         event: AstrMessageEvent,
         p1: str = "",
@@ -1851,31 +2019,22 @@ class AICatPlugin(Star):
         p9: str = "",
         p10: str = "",
     ) -> AsyncGenerator[Any, None]:
-        error = self._quota_error_message(event, 1) or self._rate_limit_error_message(event)
-        if error:
-            yield event.plain_result(error)
-            return
-
-        fallback = " ".join(item for item in [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10] if item).strip()
-        message = self._extract_compact_command_message(event, "看看", fallback)
-        group_request = self._looks_like_group_selfie_intent(message)
-        has_refs = bool(extract_image_sources_from_event(event, include_at_avatar=group_request))
-        action, progress_label, source, fail_label = self._build_quick_look_action(message, has_refs)
+        raw_extra = " ".join(item for item in [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10] if item).strip()
+        fallback = self._build_third_person_look_action(raw_extra, bool(extract_image_sources_from_event(event)))
         async for item in self._handle_selfie_command(
             event=event,
-            command_name="看看",
-            fallback=action,
-            default_action=action,
-            default_action_with_refs=action,
-            progress_label=progress_label,
-            source=source,
-            fail_label=fail_label,
-            message_override=action,
-            include_at_avatar=progress_label == "合影",
+            command_name="看看你",
+            fallback=fallback,
+            default_action=self._build_third_person_look_action("", False),
+            default_action_with_refs=self._build_third_person_look_action("", True),
+            progress_label="自拍",
+            source="command-look-you",
+            fail_label=self._natural_fail_fallback("selfie"),
+            message_override=fallback,
         ):
             yield item
 
-    @filter.command("合影")
+    @filter.command("合影", alias={"合照"})
     async def cmd_group_selfie(
         self,
         event: AstrMessageEvent,
@@ -1891,44 +2050,18 @@ class AICatPlugin(Star):
         p10: str = "",
     ) -> AsyncGenerator[Any, None]:
         fallback = " ".join(item for item in [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10] if item).strip()
+        raw_message = extract_command_message(event, ("合影", "合照"), fallback)
+        action = self._build_group_selfie_action(raw_message, bool(extract_image_sources_from_event(event, include_at_avatar=True)))
         async for item in self._handle_selfie_command(
             event=event,
-            command_name="合影",
+            command_name=("合影", "合照"),
             fallback=fallback,
-            default_action="和用户自然合影，同框自拍，保持 AI 当前形象一致。",
-            default_action_with_refs="和用户提供的参考图角色自然合影，同框自拍，保持 AI 当前形象一致；如果同一张参考图里有多个可见人物 / 角色，按实际可见人数全部保留为独立同框对象；如果参考图是动漫、卡通、表情包或非真人对象，默认拟人化 / 真人化成自然同框的人类角色，并保留主要识别特征。",
+            default_action=self._build_group_selfie_action("", False),
+            default_action_with_refs=self._build_group_selfie_action("", True),
             progress_label="合影",
             source="command-group-selfie",
-            fail_label="这次合影我没拍稳",
-            include_at_avatar=True,
-        ):
-            yield item
-
-    @filter.command("合照")
-    async def cmd_group_photo(
-        self,
-        event: AstrMessageEvent,
-        p1: str = "",
-        p2: str = "",
-        p3: str = "",
-        p4: str = "",
-        p5: str = "",
-        p6: str = "",
-        p7: str = "",
-        p8: str = "",
-        p9: str = "",
-        p10: str = "",
-    ) -> AsyncGenerator[Any, None]:
-        fallback = " ".join(item for item in [p1, p2, p3, p4, p5, p6, p7, p8, p9, p10] if item).strip()
-        async for item in self._handle_selfie_command(
-            event=event,
-            command_name="合照",
-            fallback=fallback,
-            default_action="和用户自然合照，同框自拍，保持 AI 当前形象一致。",
-            default_action_with_refs="和用户提供的参考图角色自然合照，同框自拍，保持 AI 当前形象一致；如果同一张参考图里有多个可见人物 / 角色，按实际可见人数全部保留为独立同框对象；如果参考图是动漫、卡通、表情包或非真人对象，默认拟人化 / 真人化成自然同框的人类角色，并保留主要识别特征。",
-            progress_label="合影",
-            source="command-group-selfie",
-            fail_label="这次合照我没拍稳",
+            fail_label=self._natural_fail_fallback("group"),
+            message_override=action,
             include_at_avatar=True,
         ):
             yield item
@@ -2096,18 +2229,19 @@ class AICatPlugin(Star):
         ack_message: str = "",
     ) -> Optional[str]:
         """
-        使用 AICat 生图模型生成图片。支持文生图和参考图图生图。
+        使用生图模型生成图片。支持文生图和参考图图生图。
         不要用于生成 AI 自己、自拍、合影、合照、同框、与用户一起拍照；这些请求必须调用 generate_selfie。
         即使你把用户需求整理成英文，只要包含 group selfie、group photo、with you、with me、standing next to、same frame 等含义，也必须调用 generate_selfie。
         如果误把合影/同框/自拍请求传到这里，插件会自动转入 generate_selfie 流程以带上 AI 形象参考图。
         调用前应先根据当前对话、用户语气、上下文和机器人人设，把用户的自然语言需求整理成适合生图的 prompt。
         不要只把用户原话机械复制进 prompt；要补全主体、场景、动作、氛围、构图、风格、约束和参考图关系。
+        如果画面包含人物、类人角色、动物或多角色互动，prompt 必须加入肢体完整性约束：避免肢体残缺、多肢异肢、手脚融合、断腕扭手、手指缺失或多指、身体部位漂浮或被画面边缘生硬截断。
         如果用户是在闲聊中顺势要求画图，ack_message 应像当前人格自然接话，而不是“收到/正在生成”这类模板。
         ack_message 不要复读用户原话或整理后的 prompt，不要把 prompt 包在引号里发给用户。
         ack_message 必须使用简体中文，即使 prompt 或用户原文是英文，也只写 10-40 个中文字的自然反应。
         避免“沿着/顺着/照着 xxx”“收到”“马上为你生成”等僵硬句式。
         Args:
-            prompt(string): LLM 根据当前对话整理后的生图提示词，描述主体、风格、场景、构图、细节和参考图使用方式。
+            prompt(string): LLM 根据当前对话整理后的生图提示词，描述主体、风格、场景、构图、细节、参考图使用方式和肢体完整性约束。
             count(number): 生成张数，默认 1。
             aspect_ratio(string): 宽高比，例如 1:1、3:4、9:16、16:9；留空使用默认值。
             resolution(string): 分辨率，例如 1K、2K、4K；留空使用默认值。
@@ -2133,7 +2267,7 @@ class AICatPlugin(Star):
         for _ in range(requested_count):
             result = await self._draw_once(event, prompt, aspect, resol, refs, "llm-generate-image")
             if not result.get("success"):
-                return self._tool_soft_fail(str(result.get("error") or ""), "这张我刚刚没理顺。")
+                return self._tool_soft_fail(str(result.get("error") or ""), self._natural_fail_fallback("image"))
             files.extend(result.get("files", []))
             used_model = str(result.get("used_model") or used_model)
         sent = await self._send_generated_images(event, files)
@@ -2157,11 +2291,12 @@ class AICatPlugin(Star):
         英文整理结果包含 group selfie、group photo、with you、with me、standing next to、same frame 等含义时也属于这个工具。
         本工具会自动带上 AI 当前形象参考图；如果用户消息里附带图片，也会作为合影对象或参考图一起传入。
         调用前应根据当前对话和机器人人设，把用户的要求整理成自拍动作/场景/情绪/服装/镜头语言。
+        action 必须保留肢体完整性约束：避免肢体残缺、多肢异肢、手脚融合、断腕扭手、手指缺失或多指、身体部位漂浮；合影/同框时每个人都要有独立完整的头、手臂、手、手指、腿和脚，不能复制脸或融合身体。
         ack_message 必须使用简体中文，即使 action 或用户原文是英文，也不要用英文回复用户。
         ack_message 应表现出当前人格的反应，例如害羞、认真、调皮或吐槽，而不是固定进度句。
         ack_message 不要复读用户原话或整理后的 action，不要使用“沿着/顺着/照着 xxx”“收到”“马上为你生成”等僵硬句式。
         Args:
-            action(string): LLM 根据当前对话整理后的自拍动作、表情、服装、姿势、环境、镜头或合照要求。
+            action(string): LLM 根据当前对话整理后的自拍动作、表情、服装、姿势、环境、镜头、合照要求和肢体完整性约束。
             count(number): 生成张数，默认 1。
             aspect_ratio(string): 宽高比，例如 1:1、3:4、9:16、16:9；留空使用默认值。
             resolution(string): 分辨率，例如 1K、2K、4K；留空使用默认值。

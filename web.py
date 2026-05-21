@@ -1,4 +1,4 @@
-"""Embedded Flask Web UI for AICat."""
+"""Embedded Flask Web UI for Selfie Image."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ INDEX_HTML = r"""<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AICat 管理面板</title>
+  <title>Selfie Image 管理面板</title>
   <style>
     :root {
       color-scheme: light;
@@ -52,7 +52,7 @@ INDEX_HTML = r"""<!doctype html>
     body.authed .login-page { display: none; }
     .login-box { width: min(420px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px; }
     .login-box h1 { color: var(--text); margin-bottom: 8px; }
-    nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding-bottom: 2px; }
+    nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding-bottom: 2px; }
     nav button { border: 1px solid var(--line); background: #fff; color: var(--text); border-radius: 6px; padding: 9px 8px; white-space: nowrap; min-width: 0; width: 100%; }
     nav button.active { background: var(--primary); border-color: var(--primary); color: #fff; }
     section { display: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
@@ -137,7 +137,7 @@ INDEX_HTML = r"""<!doctype html>
 <body>
   <div id="loginPage" class="login-page">
     <div class="login-box">
-      <h1>AICat 管理登录</h1>
+      <h1>Selfie Image 管理登录</h1>
       <p class="muted">输入 AstrBot 插件配置里的 Web Token。</p>
       <label>Web Token</label>
       <input id="loginToken" type="password" placeholder="Web Token" autocomplete="current-password">
@@ -149,7 +149,7 @@ INDEX_HTML = r"""<!doctype html>
   </div>
 
   <header class="app-shell">
-    <h1>AICat 生图自拍管理</h1>
+    <h1>Selfie Image 生图自拍管理</h1>
     <div class="topline">
       <button id="reloadAll">刷新</button>
       <button id="logoutBtn" class="secondary">退出登录</button>
@@ -195,7 +195,7 @@ INDEX_HTML = r"""<!doctype html>
           <button class="secondary" onclick="addAuditChannel()">添加审核渠道</button>
         </div>
       </div>
-      <p class="muted">支持 Napcat AICat 生图渠道类型：openai、gemini、gemini_openai、z_image_gitee、jimeng2api、grok。列表只显示概要，点编辑管理接口、缓存模型和启用模型顺序。</p>
+      <p class="muted">支持生图渠道类型：openai、gemini、gemini_openai、z_image_gitee、jimeng2api、grok。列表只显示概要，点编辑管理接口、缓存模型和启用模型顺序。</p>
       <div class="tabs-inline">
         <button id="channelTabImage" class="active" type="button" onclick="switchChannelPane('image')">生图渠道</button>
         <button id="channelTabAudit" type="button" onclick="switchChannelPane('audit')">审核渠道</button>
@@ -221,12 +221,13 @@ INDEX_HTML = r"""<!doctype html>
         </div>
       </div>
       <div class="grid4">
-        <div><label>来源筛选</label><select id="monitorSource"><option value="">全部</option></select></div>
+        <div><label>来源筛选</label><input id="monitorSource" list="monitorSourceList" placeholder="输入来源关键词"><datalist id="monitorSourceList"></datalist></div>
         <div><label>模型筛选</label><select id="monitorModel"><option value="">全部</option></select></div>
         <div><label>状态</label><select id="monitorSuccess"><option value="">全部</option><option value="true">成功</option><option value="false">失败</option></select></div>
         <div><label>统计</label><div id="monitorStats" class="status"></div></div>
       </div>
       <div style="overflow:auto;margin-top:12px"><table class="table" id="recordTable"></table></div>
+      <div id="monitorPager" class="actions"></div>
     </section>
 
     <section id="test">
@@ -239,6 +240,7 @@ INDEX_HTML = r"""<!doctype html>
       </div>
       <label>测试提示词</label><textarea id="testPrompt">一只可爱的白色猫咪，坐在樱花树下，柔和光线，精致插画风格</textarea>
       <div class="grid">
+        <label class="checkline"><input id="promptEnhance" type="checkbox" checked> 提示词增强</label>
         <label class="checkline"><input id="useSelfie" type="checkbox"> 使用 AI 自拍形象参考图</label>
         <div><label>额外参考图</label><input id="testRefs" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple></div>
       </div>
@@ -289,6 +291,7 @@ INDEX_HTML = r"""<!doctype html>
       <div class="actions">
         <button id="uploadSelfie">上传并保存</button>
         <button class="secondary" onclick="refreshSelfie()">刷新预览</button>
+        <button class="ok" onclick="refreshDailySelfie()">刷新今日穿搭</button>
         <button class="danger" onclick="clearSelfie()">清除参考图</button>
       </div>
       <div id="selfieStatus" class="status"></div>
@@ -306,9 +309,6 @@ INDEX_HTML = r"""<!doctype html>
       <label>提示词屏蔽词</label><textarea id="blockedWords"></textarea>
       <label>提示词审核模板</label><textarea id="promptAuditTemplate"></textarea>
       <label>出图审核模板</label><textarea id="outputAuditTemplate"></textarea>
-      <div class="actions">
-        <button class="ok" onclick="refreshDailySelfie()">刷新今日穿搭</button>
-      </div>
       <div id="auditStatus" class="status">提示词屏蔽词、提示词审核、出图审核会在命令、LLM 工具和 Web 渠道测试中生效。出图审核需要选择支持视觉的 OpenAI/Gemini 兼容模型。</div>
     </section>
 
@@ -392,9 +392,11 @@ INDEX_HTML = r"""<!doctype html>
     const ASPECTS = ['自动','1:1','2:3','3:2','3:4','4:3','4:3','4:5','5:4','9:16','16:9','21:9'].filter((v,i,a)=>a.indexOf(v)===i);
     const PROVIDERS = ['openai','gemini','gemini_openai','z_image_gitee','jimeng2api','grok'];
     const AUDIT_PROVIDERS = ['openai','gemini','gemini_openai'];
+    const MONITOR_PAGE_SIZE = 20;
     let CONFIG = {};
     let RECORDS = [];
-    let AUTH_TOKEN = localStorage.getItem('aicatToken') || '';
+    let MONITOR_PAGE = 1;
+    let AUTH_TOKEN = localStorage.getItem('selfieImageToken') || localStorage.getItem('aicatToken') || '';
     let IS_FILLING = false;
     let AUTO_SAVE_TIMER = null;
     let ACTIVE_CHANNEL_PANE = 'image';
@@ -403,7 +405,7 @@ INDEX_HTML = r"""<!doctype html>
 
     $('loginToken').value = AUTH_TOKEN;
 
-    function headers() { return {'Content-Type':'application/json','X-AICat-Token':AUTH_TOKEN}; }
+    function headers() { return {'Content-Type':'application/json','X-Selfie-Image-Token':AUTH_TOKEN}; }
     async function api(path, options = {}) {
       const opts = Object.assign({headers: headers()}, options);
       const res = await fetch(path, opts);
@@ -1040,21 +1042,59 @@ INDEX_HTML = r"""<!doctype html>
         showToast('记录已清空', 'ok');
       } catch (e) { $('monitorStats').textContent = e.message; }
     }
+    function setMonitorSourceOptions(values) {
+      const list = $('monitorSourceList');
+      list.innerHTML = '';
+      for (const value of values) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        list.appendChild(opt);
+      }
+    }
+    function monitorSourceText(record) {
+      return [
+        record.source_label || '',
+        record.source || '',
+        record.group_id || '',
+        record.user_id || ''
+      ].join(' ');
+    }
+    function setMonitorPage(page) {
+      MONITOR_PAGE = page;
+      renderRecords();
+    }
+    function monitorFilterChanged() {
+      MONITOR_PAGE = 1;
+      renderRecords();
+    }
     function renderRecords() {
-      const source = $('monitorSource').value.trim();
+      const source = $('monitorSource').value.trim().toLowerCase();
       const model = $('monitorModel').value.trim();
       const success = $('monitorSuccess').value;
       const sourceOptions = uniq(RECORDS.map(r => String(r.source_label || r.source || '').trim()).filter(Boolean));
       const modelOptions = uniq(RECORDS.map(r => String(r.used_model || '').trim()).filter(Boolean));
-      setSelectOptions('monitorSource', [''].concat(sourceOptions), source);
+      setMonitorSourceOptions(sourceOptions);
       setSelectOptions('monitorModel', [''].concat(modelOptions), model);
-      const rows = RECORDS.filter(r => (!source || String(r.source_label || r.source || '').includes(source)) && (!model || String(r.used_model||'').includes(model)) && (!success || String(!!r.success) === success));
+      const rows = RECORDS.filter(r => (
+        !source || monitorSourceText(r).toLowerCase().includes(source)
+      ) && (!model || String(r.used_model||'').includes(model)) && (!success || String(!!r.success) === success));
       const ok = rows.filter(r=>r.success).length;
       const avg = rows.length ? rows.reduce((s,r)=>s+Number(r.elapsed_seconds||0),0)/rows.length : 0;
-      $('monitorStats').textContent = `记录 ${rows.length} / 成功 ${ok} / 失败 ${rows.length-ok} / 平均 ${avg.toFixed(2)}s`;
+      const totalPages = Math.max(1, Math.ceil(rows.length / MONITOR_PAGE_SIZE));
+      MONITOR_PAGE = Math.min(Math.max(1, MONITOR_PAGE), totalPages);
+      const start = (MONITOR_PAGE - 1) * MONITOR_PAGE_SIZE;
+      const pageRows = rows.slice(start, start + MONITOR_PAGE_SIZE);
+      $('monitorStats').textContent = `记录 ${rows.length} / 成功 ${ok} / 失败 ${rows.length-ok} / 平均 ${avg.toFixed(2)}s / 第 ${MONITOR_PAGE}/${totalPages} 页`;
       $('recordTable').innerHTML = '<thead><tr><th>时间</th><th>来源</th><th>状态</th><th>模型</th></tr></thead><tbody>' +
-        rows.map(r => `<tr style="cursor:pointer" title="点击查看详情" onclick="openRecordDetail('${escapeJs(r.id || '')}')"><td>${escapeHtml(r.time||'')}</td><td>${escapeHtml(r.source_label || r.source || '')}</td><td>${r.success?'成功':'失败'}</td><td>${escapeHtml(r.used_model||'')}</td></tr>`).join('') +
+        (pageRows.length ? pageRows.map(r => `<tr style="cursor:pointer" title="点击查看详情" onclick="openRecordDetail('${escapeJs(r.id || '')}')"><td>${escapeHtml(r.time||'')}</td><td>${escapeHtml(r.source_label || r.source || '')}</td><td>${r.success?'成功':'失败'}</td><td>${escapeHtml(r.used_model||'')}</td></tr>`).join('') : '<tr><td colspan="4" class="muted">没有匹配的监控记录</td></tr>') +
         '</tbody>';
+      $('monitorPager').innerHTML = `
+        <button class="secondary mini" type="button" onclick="setMonitorPage(1)" ${MONITOR_PAGE <= 1 ? 'disabled' : ''}>首页</button>
+        <button class="secondary mini" type="button" onclick="setMonitorPage(${MONITOR_PAGE - 1})" ${MONITOR_PAGE <= 1 ? 'disabled' : ''}>上一页</button>
+        <span class="pill gray">每页 ${MONITOR_PAGE_SIZE} 条，显示 ${pageRows.length ? start + 1 : 0}-${start + pageRows.length}</span>
+        <button class="secondary mini" type="button" onclick="setMonitorPage(${MONITOR_PAGE + 1})" ${MONITOR_PAGE >= totalPages ? 'disabled' : ''}>下一页</button>
+        <button class="secondary mini" type="button" onclick="setMonitorPage(${totalPages})" ${MONITOR_PAGE >= totalPages ? 'disabled' : ''}>末页</button>
+      `;
     }
 
     function cacheImageUrl(path) {
@@ -1112,6 +1152,7 @@ INDEX_HTML = r"""<!doctype html>
           prompt: $('testPrompt').value.trim(),
           aspect_ratio: $('testAspect').value,
           resolution: $('testResolution').value,
+          prompt_enhance: $('promptEnhance').checked,
           use_selfie_reference: $('useSelfie').checked,
           images
         };
@@ -1208,7 +1249,8 @@ INDEX_HTML = r"""<!doctype html>
       try {
         const res = await api('/api/config');
         CONFIG = res.data || {};
-        localStorage.setItem('aicatToken', AUTH_TOKEN);
+        localStorage.setItem('selfieImageToken', AUTH_TOKEN);
+        localStorage.removeItem('aicatToken');
         fillForms();
         document.body.classList.add('authed');
         $('loginStatus').textContent = '';
@@ -1222,6 +1264,7 @@ INDEX_HTML = r"""<!doctype html>
     }
     function logout() {
       AUTH_TOKEN = '';
+      localStorage.removeItem('selfieImageToken');
       localStorage.removeItem('aicatToken');
       $('loginToken').value = '';
       document.body.classList.remove('authed');
@@ -1270,8 +1313,9 @@ INDEX_HTML = r"""<!doctype html>
     }
     mirrorValue('defaultAspect', 'selfieAspect');
     mirrorValue('selfieAspect', 'defaultAspect');
-    ['monitorSource','monitorModel','monitorSuccess'].forEach(id => {
-      $(id).onchange = renderRecords;
+    $('monitorSource').oninput = monitorFilterChanged;
+    ['monitorModel','monitorSuccess'].forEach(id => {
+      $(id).onchange = monitorFilterChanged;
     });
 
     (async function init() {
@@ -1331,7 +1375,7 @@ class FlaskWebServer:
         return asyncio.run(coro)
 
     def _create_app(self) -> Any:
-        app = Flask("astrbot_plugin_aicat")
+        app = Flask("astrbot_plugin_selfie_image")
         app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024
 
         def ok(data: Any = None, **extra: Any) -> Any:
@@ -1347,7 +1391,8 @@ class FlaskWebServer:
             if auth.lower().startswith("bearer "):
                 return auth[7:].strip()
             return (
-                str(request.headers.get("X-AICat-Token") or "")
+                str(request.headers.get("X-Selfie-Image-Token") or "")
+                or str(request.headers.get("X-AICat-Token") or "")
                 or str(request.headers.get("X-Token") or "")
                 or str(request.args.get("token") or "")
             ).strip()

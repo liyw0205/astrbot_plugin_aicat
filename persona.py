@@ -35,6 +35,7 @@ class SelfieIntent:
     use_today_outfit: bool
     has_reference_style_hint: bool
     is_legs_only: bool = False
+    is_third_person_photo: bool = False
 
 
 def normalize_intent_text(text: str) -> str:
@@ -286,6 +287,15 @@ class PersonaManager:
                 "制服",
                 "女仆装",
                 "水手服",
+                "丝袜",
+                "黑丝",
+                "白丝",
+                "肉丝",
+                "光腿",
+                "连裤袜",
+                "过膝袜",
+                "长袜",
+                "短袜",
                 "jk",
                 "cos",
                 "cosplay",
@@ -346,6 +356,34 @@ class PersonaManager:
             ],
         )
         is_legs_only = includes_any(compact, ["看看腿", "看腿", "拍腿", "自拍腿", "丝袜", "黑丝", "白丝", "肉丝", "光腿", "美腿", "大腿", "腿"])
+        is_third_person_photo = includes_any(
+            compact,
+            [
+                "他拍",
+                "别人拍",
+                "别人帮拍",
+                "朋友拍",
+                "有人拍",
+                "被拍",
+                "抓拍",
+                "第三人称",
+                "路人视角",
+                "摄影师拍",
+                "不是自拍",
+                "非自拍",
+                "不要自拍",
+                "不拿手机",
+                "不要拿手机",
+                "不要手持手机",
+                "不要自拍杆",
+                "不要对镜",
+                "thirdperson",
+                "notselfie",
+                "candidphoto",
+                "takenbyanotherperson",
+                "shotbyanotherperson",
+            ],
+        )
         use_today = not compact or includes_any(compact, ["看看你", "看下你", "你长什么样", "你的样子", "今日穿搭", "今天穿搭", "今天这身"])
         has_ref_hint = includes_any(
             compact,
@@ -376,6 +414,7 @@ class PersonaManager:
             use_today_outfit=use_today,
             has_reference_style_hint=has_ref_hint,
             is_legs_only=is_legs_only,
+            is_third_person_photo=is_third_person_photo,
         )
 
     async def ensure_daily_selfie_profile(self, action: str = "") -> DailySelfieProfile:
@@ -505,19 +544,34 @@ class PersonaManager:
             mode_lines.extend(
                 [
                     "【特写自拍 / 晒腿模式】",
-                    "本次重点是成年角色的自然坐姿自拍，构图重点放在腿部线条和当前穿搭上，画面得体、日常、柔和、非挑逗，不要拍成普通正面自拍。",
+                    "本次重点是成年角色的自然坐姿自拍，构图重点放在腿部线条和袜装上，画面得体、日常、柔和、非挑逗，不要拍成普通正面自拍。",
+                    "默认袜装是黑色透肤丝袜 / 黑丝；除非用户明确要求白丝、肉丝、光腿、短袜或其他袜装，否则不要用今日穿搭覆盖黑丝默认值。",
                     "优先使用第一人称俯视视角（POV, first-person view, looking down at own legs），像低头看向自己腿部的随手拍；也可以使用自然低角度坐姿自拍，但除非用户明确指定，否则不要使用完整露脸、对镜或站姿构图。",
                     "主角可以坐在床沿、沙发、单人椅、窗边椅或地毯边，双腿自然向前、斜侧摆放、轻微交叠或并拢放松；膝盖和脚尖方向协调，脚踝线条清楚，坐姿要顺眼、放松、符合人体结构。",
                     "画面重点呈现裙摆、膝盖、小腿、脚踝、鞋袜搭配和衣料垂落，让腿部线条、穿搭层次、袜口、鞋面材质、地毯/床单/木地板纹理都自然好看。",
-                    "手部互动要像日常自拍里的小动作：轻轻整理或拉住裙摆/衣角、扶住膝盖、调整坐姿、整理袜口或鞋带；如果用户明确要求丝袜，可以轻轻整理丝袜边缘，但动作要含蓄自然，不要固定成拉扯姿势。",
+                    "手部互动要像日常自拍里的小动作：轻轻整理或拉住裙摆/衣角、扶住膝盖、调整坐姿、整理袜口或鞋带；可以轻轻整理黑丝边缘，但动作要含蓄自然，不要固定成拉扯姿势。",
                     "构图重点必须放在腿部和下半身，脸部只可少量入镜甚至完全不入镜；避免夸张广角、畸形拉伸、腿部变短、关节不自然、膝盖脚踝被乱裁。",
-                    "环境和光线要跟当前时间段、当天穿搭、房间状态一起变化：可以是晨光、午后漫反射、傍晚暖灯、夜里床边小灯，也可以是居家地毯、沙发边、窗边、床单、木地板或浅色系房间，不要每次都像同一个模板房间。",
-                    "细节刻画应根据当前穿搭自然变化，可以突出裸腿、短袜、长袜、丝袜、裙摆垂落、鞋面材质、毛毯纹理和柔和室内光影，但不要每次固定成同一种丝袜拉扯画面。",
+                    "环境和光线要跟当前时间段、房间状态一起变化：可以是晨光、午后漫反射、傍晚暖灯、夜里床边小灯，也可以是居家地毯、沙发边、窗边、床单、木地板或浅色系房间，不要每次都像同一个模板房间。",
+                    "细节刻画默认突出黑丝、裙摆垂落、鞋面材质、毛毯纹理和柔和室内光影；如果用户明确指定其他袜装或光腿，再按用户要求替换。",
                     "避免过度暴露、内衣视角、性暗示姿势或夸张肢体特写。画面干净、自然、写实，保持私密但温柔的日常随手拍氛围。",
                 ]
             )
             if intent.change_clothes:
                 mode_lines.append("本次同时包含换装要求：优先使用用户指定的服装/穿搭，不要用今日穿搭覆盖它。")
+        elif intent.is_third_person_photo:
+            mode_lines.extend(
+                [
+                    "【他拍 / 日常照片模式】",
+                    "本次不是自己拿手机自拍，而是像第二个人在旁边用相机或手机自然拍下你。",
+                    "镜头视角来自画面外的拍摄者；你可以看向镜头，也可以自然做自己的事，姿态要像被朋友随手拍到。",
+                    "不要出现主角手持手机、自拍杆、镜子自拍、对镜拍、手机遮脸或伸手自拍的构图。",
+                    "画面可以有轻微抓拍感和生活感，但主体脸部、穿搭和姿态要清晰自然。",
+                ]
+            )
+            if intent.change_clothes:
+                mode_lines.append("本次同时包含换装要求：优先使用用户指定的服装/穿搭，不要用今日穿搭覆盖它。")
+            if intent.change_pose:
+                mode_lines.append("本次同时包含姿势/动作要求：在他拍视角下自然完成用户指定的动作或表情。")
         elif intent.change_clothes and intent.change_pose:
             mode_lines.extend(
                 [
@@ -558,7 +612,7 @@ class PersonaManager:
             )
 
         today_lines: list[str] = []
-        if daily and daily.outfit and not intent.change_clothes:
+        if daily and daily.outfit and not intent.change_clothes and not intent.is_legs_only:
             today_lines.append(f"今日穿搭：{daily.outfit}")
         if daily and daily.status:
             today_lines.append(f"当前时间段：{period_label(current_period())}")
@@ -567,6 +621,7 @@ class PersonaManager:
             today_lines.append(f"当前心情：{daily.mood}")
 
         action_line = f"用户要求：{act}" if act else "用户要求：看着镜头自然自拍，展示你现在的样子。"
+        subject_photo_label = "日常他拍照片" if intent.is_third_person_photo and not intent.is_group_photo else "自拍照片"
         output_lines = (
             [
                 "【生成要求】",
@@ -575,10 +630,10 @@ class PersonaManager:
                 "3. 所有人物必须在同一个完整场景中，自然站位或坐位，姿势协调，比例合理，透视一致。",
                 "4. 整张图像应像真实拍下的一张自然合照，不要多视角，不要拼图，不要分镜。",
                 "5. 所有人物人体结构必须完整自然；头、手臂、手、手指、腿和脚数量正确，比例合理。",
-                "6. 不要肢体残缺、不要多肢异肢、不要多手多脚、不要手指缺失或多指、不要手脚融合、不要断腕扭手、不要身体部位漂浮或错位。",
+                "6. 不要肢体残缺、不要多肢异肢、不要多手多脚、不要手指缺失或多指、不要手脚融合、不要断腕扭手、不要身体部位漂浮、错位或被画面边缘生硬截断。",
                 "7. 非真人额外参考图必须真人化 / 拟人化成同框人类角色，同时保留其核心识别特征。",
                 "8. 不要文字水印，不要角色设定图，不要多人复制脸。",
-                "single coherent group photo, natural group selfie, include every distinct visible real person or character from the reference images, preserve the actual number of visible people in each multi-person reference image, do not extract only one person from a group reference photo, multiple distinct real human people if references are provided, anatomically complete bodies, correct number of arms hands fingers legs and feet, no missing limbs, no extra limbs, no malformed limbs, no fused limbs, no detached body parts, no extra fingers, no missing fingers, no broken wrists, anthropomorphize or humanize anime/cartoon/sticker/non-human references into realistic human companions, preserve key recognizable traits, consistent lighting, same camera perspective, no collage, no split screen, no face merging, no duplicated faces, no watermark, no text",
+                "single coherent group photo, natural group selfie, include every distinct visible real person or character from the reference images, preserve the actual number of visible people in each multi-person reference image, do not extract only one person from a group reference photo, multiple distinct real human people if references are provided, anatomically complete bodies, correct number of arms hands fingers legs and feet, no missing limbs, no extra limbs, no malformed limbs, no fused limbs, no detached body parts, no awkwardly cropped limbs, no extra fingers, no missing fingers, no broken wrists, anthropomorphize or humanize anime/cartoon/sticker/non-human references into realistic human companions, preserve key recognizable traits, consistent lighting, same camera perspective, no collage, no split screen, no face merging, no duplicated faces, no watermark, no text",
             ]
             if intent.is_group_photo
             else [
@@ -587,16 +642,24 @@ class PersonaManager:
                 "2. 可以根据本次要求自然变化衣服、姿势、表情、室内氛围和小道具。",
                 "3. 整张图应像今天真实拍下的一张照片，而不是模板图。",
                 "4. 人体结构必须完整自然；头、手臂、手、手指、腿和脚数量正确，比例合理。",
-                "5. 不要肢体残缺、不要多肢异肢、不要多手多脚、不要手指缺失或多指、不要手脚融合、不要断腕扭手、不要身体部位漂浮或错位。",
+                "5. 不要肢体残缺、不要多肢异肢、不要多手多脚、不要手指缺失或多指、不要手脚融合、不要断腕扭手、不要身体部位漂浮、错位或被画面边缘生硬截断。",
                 "6. 不要拼图，不要分镜，不要角色展示板，不要多视角，不要文字水印。",
-                "single image, natural selfie photo, complete and unified scene, anatomically complete body, correct number of arms hands fingers legs and feet, no missing limbs, no extra limbs, no malformed limbs, no fused limbs, no detached body parts, no extra fingers, no missing fingers, no broken wrists, no collage, no grid, no split screen, no character sheet, no multiple views, no watermark, no text",
+                (
+                    "single image, natural candid portrait photo, photographed by another person, camera held by someone outside the frame, "
+                    "no handheld phone selfie, no selfie stick, no mirror selfie, no phone covering face, complete and unified scene, "
+                    "anatomically complete body, correct number of arms hands fingers legs and feet, no missing limbs, no extra limbs, "
+                    "no malformed limbs, no fused limbs, no detached body parts, no awkwardly cropped limbs, no extra fingers, no missing fingers, no broken wrists, "
+                    "no collage, no grid, no split screen, no character sheet, no multiple views, no watermark, no text"
+                )
+                if intent.is_third_person_photo
+                else "single image, natural selfie photo, complete and unified scene, anatomically complete body, correct number of arms hands fingers legs and feet, no missing limbs, no extra limbs, no malformed limbs, no fused limbs, no detached body parts, no awkwardly cropped limbs, no extra fingers, no missing fingers, no broken wrists, no collage, no grid, no split screen, no character sheet, no multiple views, no watermark, no text",
             ]
         )
 
         return "\n".join(
             line
             for line in [
-                f"这是 {bot_name or 'AI'} 的自拍照片。",
+                f"这是 {bot_name or 'AI'} 的{subject_photo_label}。",
                 "" if has_reference_image else (f"角色设定：{personality}" if personality else ""),
                 *identity_lines,
                 *reference_lines,

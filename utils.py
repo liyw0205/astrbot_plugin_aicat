@@ -267,13 +267,17 @@ def extract_event_text(event: Any) -> str:
     return str(getattr(event, "message_obj", "") or "").strip()
 
 
-def extract_command_message(event: Any, command: str, fallback: str = "") -> str:
+def extract_command_message(event: Any, command: Any, fallback: str = "") -> str:
     text = extract_event_text(event)
     if not text:
         return fallback.strip()
-    pattern = rf"^\s*[/!！.]?{re.escape(command)}(?:\s+([\s\S]*))?$"
-    match = re.match(pattern, text)
-    return (match.group(1) or "").strip() if match else fallback.strip()
+    commands = [command] if isinstance(command, str) else [str(item) for item in command if str(item).strip()]
+    for item in commands:
+        pattern = rf"^\s*[/!！.]?{re.escape(item)}(?:\s+([\s\S]*))?$"
+        match = re.match(pattern, text)
+        if match:
+            return (match.group(1) or "").strip()
+    return fallback.strip()
 
 
 def extract_image_sources_from_event(event: Any, include_at_avatar: bool = False) -> List[str]:

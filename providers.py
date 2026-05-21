@@ -1,4 +1,4 @@
-"""Image generation provider adapters ported from Napcat AICat."""
+"""Image generation provider adapters."""
 
 from __future__ import annotations
 
@@ -347,7 +347,7 @@ class OpenAIImageAdapter(BaseImageAdapter):
         url = f"{base}/v1/images/edits"
         try:
             data, error = await self._post_edit_form(url, req, "image")
-            if error and error.startswith("HTTP 400:"):
+            if error:
                 fallback_data, fallback_error = await self._post_edit_form(url, req, "image[]")
                 if fallback_data is not None:
                     data, error = fallback_data, ""

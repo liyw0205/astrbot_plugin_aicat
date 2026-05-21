@@ -1,8 +1,7 @@
-name: astrbot_plugin_aicat
-display_name: AICat 生图自拍
-desc: 从 Napcat AICat 迁移的 AstrBot 生图、图生图、AI 自拍和 Flask Web 管理插件。
-help: 发送 /aicat帮助 查看说明；Web 面板地址见日志或配置 web.port。
+name: astrbot_plugin_selfie_image
+display_name: Selfie Image 生图自拍
+desc: AstrBot 生图、图生图、AI 自拍和 Flask Web 管理插件。
+help: 发送 /生图帮助 查看说明；Web 面板地址见日志或配置 web.port。
 version: 1.0.0
-author: AICat Port
-repo: ""
-
+author: liyw0205
+repo: https://github.com/liyw0205/astrbot_plugin_selfie_image
